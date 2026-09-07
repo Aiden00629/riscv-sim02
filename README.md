@@ -30,7 +30,7 @@ RV32I 子集模拟器：读入汇编，逐条取指 / 译码 / 执行，Qt 图�
 |---|---|
 | 算术 | `add` `sub` `addi` |
 | 逻辑 | `andi` `ori` `xori` `and` `or` `xor` |
-| 移位 | `slli ` `srli` `s1l` `srl` |
+| 移位 | `slli` `srli` `sll` `srl` |
 | 比较 | `slti` `sltiu` |
 | 高位立即数 | `lui` |
 | 分支 | `beq` `bne` |
