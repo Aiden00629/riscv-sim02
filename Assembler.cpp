@@ -1,6 +1,34 @@
 #include "Assembler.h"
 #include <sstream>
 
+const std::unordered_map<std::string, InsnDesc> insnTable = {
+    {"addi", {Op::OP_IMM, 0, 0, 'I'}},
+    {"andi", {Op::OP_IMM, 7, 0, 'I'}},
+    {"add",  {Op::OP,     0, 0, 'R'}},
+    {"sub",  {Op::OP,     0, 0x20, 'R'}},
+    {"lui",  {Op::LUI,    0, 0, 'U'}},
+    {"beq",  {Op::BRANCH, 0, 0, 'B'}},
+    {"bne",  {Op::BRANCH, 1, 0, 'B'}},
+    {"slli", {Op::OP_IMM, 1, 0, 'I'}},
+    {"srli", {Op::OP_IMM, 5, 0, 'I'}},
+    {"sll",  {Op::OP,     1, 0, 'R'}},
+    {"xor",  {Op::OP,     4, 0, 'R'}},
+    {"srl",  {Op::OP,     5, 0, 'R'}},
+    {"or",   {Op::OP,     6, 0, 'R'}},
+    {"and",  {Op::OP,     7, 0, 'R'}},
+    {"slti", {Op::OP_IMM, 2, 0, 'I'}},
+    {"sltiu",{Op::OP_IMM,3 ,0 , 'I'}},
+    {"xori",{Op::OP_IMM ,4 ,0 , 'I'}},
+    {"ori",{Op::OP_IMM ,6 ,0 , 'I'}},
+    {"jal",{Op::JAL ,0 ,0 , 'J'}},
+    {"lw",{Op::LOAD ,2 ,0 , 'M'}},
+    {"sw",{Op::STORE ,2 ,0 , 'S'}},
+    {"lb",{Op::LOAD ,0 ,0 , 'M'}},
+    {"sb",{Op::STORE ,0 ,0 , 'S'}},
+    {"lh",{Op::LOAD ,1 ,0 , 'M'}},
+    {"sh",{Op::STORE ,1 ,0 , 'S'}}
+};
+
 namespace {
     // 去首尾空白
     std::string trim(const std::string& s) {
@@ -23,6 +51,14 @@ namespace {
     i32 parseImm(const std::string& s) {
         return std::stoi(s, nullptr, 0);
     }
+
+    u32 encodeR(const InsnDesc& desc,int rd,int rs1,int rs2){
+        return (u32(desc.funct7 << 25)) | (u32(rs2) << 20) | (u32(rs1) << 15) | (u32(desc.funct3 << 12)) | (u32(rd) << 7) | desc.opcode;  
+    }
+
+    u32 encodeI(const InsnDesc& desc,int rd,int rs1,i32 imm){
+        return (u32(imm) & 0xFFF) << 20 | (u32(rs1) << 15) | (u32(desc.funct3 << 12)) | (u32(rd) << 7) | desc.opcode;
+    }
 }
 
 u32 Assembler::assembleLine(const std::string& line) {
@@ -34,6 +70,19 @@ u32 Assembler::assembleLine(const std::string& line) {
     ss >> mnemonic;
     std::getline(ss, rest);
     auto a = splitArgs(rest);
+    auto it =insnTable.find(mnemonic);
+    if (it != insnTable.end()) {
+        const InsnDesc&desc = it->second;
+        if(desc.format == 'R'){
+            int rd = regNum(a[0]), rs1 = regNum(a[1]), rs2 = regNum(a[2]);
+            return encodeR(desc,rd,rs1,rs2);
+        }
+        if(desc.format == 'I'){
+            int rd = regNum(a[0]), rs1 = regNum(a[1]);
+            i32 imm = parseImm(a[2]);
+            return encodeI(desc,rd,rs1,imm);
+        }
+    }
 
     if (mnemonic == "addi") {
         int rd = regNum(a[0]), rs1 = regNum(a[1]);
