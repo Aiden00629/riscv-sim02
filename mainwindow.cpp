@@ -785,7 +785,7 @@ void MainWindow::onAbout()
                        "<h2>RISC-V 模拟器</h2>"
                        "<p>版本：1.0.0</p>"
                        "<p>基于 Qt 6 开发的 RISC-V 32I 指令集模拟器</p>"
-                       "<p>支持 RV32I 基础指令集（19 条指令）</p>"
+                       "<p>支持 RV32I 基础指令集（25 条指令）</p>"
                        "<p>项目地址：<a href='https://github.com'>GitHub</a></p>"
                        "<p><i>用于计算机组成原理课程学习</i></p>");
 }
