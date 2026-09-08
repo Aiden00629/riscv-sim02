@@ -14,20 +14,34 @@ private:
     u32 pc_ = 0;
     u32 progEnd_ = 0;       // 程序结束地址，run() 靠它判断何时停
     u32 lastInst_ = 0;      // 最近执行的那条指令（界面高亮数据通路用）
+
+    static void (*handlers[128])(CPU&, u32);   // 指令处理函数表
+    static void initHandlers();   // 初始化指令处理函数表
+
+    
 public:
     CPU();
-
     void loadProgram(const std::vector<u32>& code, u32 base = 0);
     void step();                          // 单步执行一条指令
     void run(size_t maxSteps = 1000000);  // 连续执行到程序结束（maxSteps 防死循环）
     void reset();
-
+    //表驱动
+     using handler = void (*)(CPU&, u32);   // 指令处理函数指针类型
+    void setpc(u32 a){
+        pc_ = a;
+    }
+    void setreg(int n, u32 v){
+        rf_.write(n,v);
+    }
+    Memory& getmem(){
+        return mem_;
+    }
+    
     // —— 给“界面 / 测试”同学用的只读接口 ——
     u32 pc() const { return pc_; }
     u32 reg(int n) const { return rf_.read(n); }
     const Memory& mem() const { return mem_; }
     bool finished() const { return pc_ >= progEnd_; }   // 程序是否已执行完
     u32 inst() const { return lastInst_; }              // 最近执行的一条指令
-
 
 };

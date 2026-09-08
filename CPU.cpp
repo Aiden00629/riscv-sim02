@@ -1,6 +1,153 @@
 #include "CPU.h"
 
-CPU::CPU() {}
+namespace {
+    void executeOP_IMM(CPU& cpu, u32 inst) {
+        int rd     = int(bits(inst, 11, 7));
+        int rs1    = int(bits(inst, 19, 15));
+        int funct3 = int(bits(inst, 14, 12));
+        i32 imm = signExtend(bits(inst, 31, 20), 12);
+        switch (funct3) {
+        case 0: cpu.setreg(rd, cpu.reg(rs1) + imm); break;   // addi
+        case 1: cpu.setreg(rd, cpu.reg(rs1) << (imm & 0x1F)); break; // slli
+        case 2: cpu.setreg(rd, ((i32)cpu.reg(rs1) < imm) ? 1 : 0); break; // slti
+        case 3: cpu.setreg(rd, (cpu.reg(rs1) < u32(imm)) ? 1 : 0); break; // sltiu
+        case 4: cpu.setreg(rd, cpu.reg(rs1) ^ imm); break;   // xori   
+        case 5: cpu.setreg(rd, cpu.reg(rs1) >> (imm & 0x1F)); break; // srli
+        case 6: cpu.setreg(rd, cpu.reg(rs1) | imm); break;   // ori 
+        case 7: cpu.setreg(rd, cpu.reg(rs1) & imm); break;   // andi
+        default:
+            std::cerr << "未实现的 OP-IMM funct3=" << funct3 << "\n";
+            throw std::runtime_error("unimplemented instruction");
+        }
+    }
+    void executeOP(CPU& cpu, u32 inst) {
+        int rd     = int(bits(inst, 11, 7));
+        int rs1    = int(bits(inst, 19, 15));
+        int rs2    = int(bits(inst, 24, 20));
+        int funct3 = int(bits(inst, 14, 12));
+        int funct7 = int(bits(inst, 31, 25));
+        switch (funct3) {
+        case 0:   // add / sub，靠 funct7 第 30 位区分
+            cpu.setreg(rd, (funct7 == 0x20)
+                              ? cpu.reg(rs1) - cpu.reg(rs2)
+                              : cpu.reg(rs1) + cpu.reg(rs2));
+            break;
+        
+        case 1: // sll
+            cpu.setreg(rd, cpu.reg(rs1) << (cpu.reg(rs2) & 0x1F));
+            break;
+        case 4: // xor
+            cpu.setreg(rd, cpu.reg(rs1) ^ cpu.reg(rs2));
+            break;
+        case 5: // srl
+            if (funct7 != 0x00) {
+                std::cerr << "未实现 sra（算术右移）\n";
+                throw std::runtime_error("unimplemented instruction");
+            }
+            cpu.setreg(rd, cpu.reg(rs1) >> (cpu.reg(rs2) & 0x1F));
+            break;
+        case 6: // or
+            cpu.setreg(rd, cpu.reg(rs1) | cpu.reg(rs2));
+            break;
+        case 7: // and
+            cpu.setreg(rd, cpu.reg(rs1) & cpu.reg(rs2));
+            break;
+        default:
+            std::cerr << "未实现的 OP funct3=" << funct3 << "\n";
+            throw std::runtime_error("unimplemented instruction");
+        }
+    }
+    void executeLUI(CPU& cpu, u32 inst) {
+        int rd = int(bits(inst, 11, 7));
+        u32 imm = inst & 0xFFFFF000u;
+        cpu.setreg(rd, imm);
+    }
+    void executeBRANCH(CPU& cpu, u32 inst) {
+        int rs1 = int(bits(inst, 19, 15));
+        int rs2 = int(bits(inst, 24, 20));
+        i32 imm = signExtend((bits(inst,31,31)<<12) | (bits(inst,7,7)<<11) | (bits(inst,30,25)<<5) |
+                             (bits(inst,11,8)<<1), 13);
+        int funct3 = int(bits(inst, 14, 12));
+        bool takeBranch = false;
+        switch (funct3) {
+        case 0: takeBranch = (cpu.reg(rs1) == cpu.reg(rs2)); break; // beq
+        case 1: takeBranch = (cpu.reg(rs1) != cpu.reg(rs2)); break; // bne
+        default:
+            std::cerr << "未实现的 BRANCH funct3=" << funct3 << "\n";
+            throw std::runtime_error("unimplemented instruction");
+        }
+        if (takeBranch)
+            cpu.setpc(cpu.pc() - 4 + imm);
+    }
+    void executeJAL(CPU& cpu, u32 inst) {
+        int rd = int(bits(inst, 11, 7));
+        i32 imm = signExtend((bits(inst,31,31)<<20) | (bits(inst,30,21)<<1)
+                           | (bits(inst,20,20)<<11) | (bits(inst,19,12)<<12), 21);
+        cpu.setreg(rd, cpu.pc());
+        cpu.setpc(cpu.pc() - 4 + imm);
+    }
+    void executeLOAD(CPU& cpu, u32 inst) {
+        int rd = int(bits(inst, 11, 7));
+        int rs1 = int(bits(inst, 19, 15));
+        i32 imm = signExtend(bits(inst, 31, 20), 12);
+        int funct3 = int(bits(inst, 14, 12));
+        u32 addr = cpu.reg(rs1) + imm;
+        switch (funct3) {
+        case 0: // lb
+            cpu.setreg(rd, signExtend(cpu.getmem().loadByte(addr), 8));
+            break;
+        case 1: // lh
+            cpu.setreg(rd, signExtend(cpu.getmem().loadHalf(addr), 16));
+            break;
+        case 2: // lw
+            cpu.setreg(rd, cpu.getmem().loadWord(addr));
+            break;
+        default:
+            std::cerr << "未实现的 LOAD funct3=" << funct3 << "\n";
+            throw std::runtime_error("unimplemented instruction");
+        }
+    }
+    void executeSTORE(CPU& cpu, u32 inst) {
+        int rs1    = int(bits(inst, 19, 15));
+        int rs2    = int(bits(inst, 24, 20));
+        int funct3 = int(bits(inst, 14, 12));
+        i32 imm = signExtend((bits(inst,31,25)<<5)|(bits(inst,11,7)), 12);
+        u32 addr = cpu.reg(rs1) + u32(imm);
+        switch (funct3) {
+        case 0: cpu.getmem().storeByte(addr, u8(cpu.reg(rs2) & 0xFF)); break;   // sb
+        case 1: cpu.getmem().storeHalf(addr, u16(cpu.reg(rs2) & 0xFFFF)); break; // sh
+        case 2: cpu.getmem().storeWord(addr, u32(cpu.reg(rs2))); break;         // sw
+        default:
+            std::cerr << "未实现的 STORE funct3=" << funct3 << "\n";
+            throw std::runtime_error("unimplemented instruction");
+        }
+    }
+    void executeILLEGAL(CPU&, u32) {
+        throw std::runtime_error("unimplemented instruction");
+    }
+}
+
+CPU::CPU() {
+    static bool inited = false;     // static：只初始化一次
+    if (!inited) {
+        initHandlers();
+        inited = true;
+    }
+}
+
+CPU::handler CPU::handlers[128];
+
+void CPU::initHandlers() {
+    for (int i = 0; i < 128; ++i)
+        handlers[i] = executeILLEGAL;     
+    handlers[Op::OP_IMM] = executeOP_IMM;
+    handlers[Op::OP]     = executeOP;
+    handlers[Op::LUI]    = executeLUI;
+    handlers[Op::BRANCH] = executeBRANCH;
+    handlers[Op::JAL]    = executeJAL;
+    handlers[Op::LOAD]   = executeLOAD;
+    handlers[Op::STORE]  = executeSTORE;
+}
 
 void CPU::loadProgram(const std::vector<u32>& code, u32 base) {
     pc_ = mem_.loadProgram(code, base);
@@ -33,136 +180,5 @@ void CPU::run(size_t maxSteps) {
 }
 
 void CPU::execute(u32 inst) {
-    u32 opcode = bits(inst, 6, 0);
-    int rd     = int(bits(inst, 11, 7));
-    int rs1    = int(bits(inst, 19, 15));
-    int funct3 = int(bits(inst, 14, 12));
-
-    switch (opcode) {
-    case Op::OP_IMM: {   // I 型算术：addi 等
-        i32 imm = signExtend(bits(inst, 31, 20), 12);
-        switch (funct3) {
-        case 0: rf_.write(rd, rf_.read(rs1) + imm); break;   // addi
-        case 1: rf_.write(rd, rf_.read(rs1) << (imm & 0x1F)); break; // slli
-        case 2: rf_.write(rd, ((i32)rf_.read(rs1) < imm) ? 1 : 0); break; // slti
-        case 3: rf_.write(rd, (rf_.read(rs1) < u32(imm)) ? 1 : 0); break; // sltiu
-        case 4: rf_.write(rd, rf_.read(rs1) ^ imm); break;   // xori   
-        case 5: rf_.write(rd, rf_.read(rs1) >> (imm & 0x1F)); break; // srli
-        case 6: rf_.write(rd, rf_.read(rs1) | imm); break;   // ori 
-        case 7: rf_.write(rd, rf_.read(rs1) & imm); break;   // andi
-        default:
-            std::cerr << "未实现的 OP-IMM funct3=" << funct3 << "\n";
-            throw std::runtime_error("unimplemented instruction");
-        }
-        break;
-    }
-    case Op::OP: {       // R 型：add / sub 等
-        int rs2    = int(bits(inst, 24, 20));
-        int funct7 = int(bits(inst, 31, 25));
-        switch (funct3) {
-        case 0:   // add / sub，靠 funct7 第 30 位区分
-            rf_.write(rd, (funct7 == 0x20)
-                              ? rf_.read(rs1) - rf_.read(rs2)
-                              : rf_.read(rs1) + rf_.read(rs2));
-            break;
-        
-        case 1: // sll
-            rf_.write(rd, rf_.read(rs1) << (rf_.read(rs2) & 0x1F));
-            break;
-        case 4: // xor
-            rf_.write(rd, rf_.read(rs1) ^ rf_.read(rs2));
-            break;
-        case 5: // srl
-            if (funct7 != 0x00) {
-                std::cerr << "未实现 sra（算术右移）\n";
-                throw std::runtime_error("unimplemented instruction");
-            }
-            rf_.write(rd, rf_.read(rs1) >> (rf_.read(rs2) & 0x1F));
-            break;
-        case 6: // or
-            rf_.write(rd, rf_.read(rs1) | rf_.read(rs2));
-            break;
-        case 7: // and
-            rf_.write(rd, rf_.read(rs1) & rf_.read(rs2));
-            break;
-        // TODO: sll / slt / xor / and / or ...
-        default:
-            std::cerr << "未实现的 OP funct3=" << funct3 << "\n";
-            throw std::runtime_error("unimplemented instruction");
-        }
-        break;
-    }
-    case Op::LUI: {      // 加载高 20 位
-        u32 imm = inst & 0xFFFFF000u;
-        rf_.write(rd, imm);
-        break;
-    }
-    case Op::BRANCH:{
-        int rs2 = int(bits(inst,24,20));
-        i32 imm = signExtend((bits(inst,31,31)<<12) | (bits(inst,7,7)<<11) | (bits(inst,30,25)<<5) | (bits(inst,11,8)<<1),13);
-        switch (funct3) {
-            case 0: // beq
-                if(rf_.read(rs1) == rf_.read(rs2)){
-                    pc_ = pc_ - 4 + imm; // pc_已经+4了，所以这里要减去4
-                }
-                break;
-            case 1: // bne
-                if(rf_.read(rs1) != rf_.read(rs2)){
-                    pc_ = pc_ - 4 + imm;
-                }
-                break;
-            default:
-                std::cerr << "未实现的 BRANCH funct3=" << funct3 << "\n";
-                throw std::runtime_error("unimplemented instruction");
-        }
-        break;
-    }
-    case Op::JAL:{
-        i32 imm = signExtend((bits(inst,31,31)<<20) | (bits(inst,30,21)<<1) | (bits(inst,20,20)<<11) | (bits(inst,19,12)<<12),21);
-        rf_.write(rd, pc_ );
-        pc_ = pc_ - 4 + imm;
-        break;
-    }
-    case Op::STORE:{
-        int rs2 = int(bits(inst,24,20));
-        i32 imm = signExtend((bits(inst,31,25)<<5)|(bits(inst,11,7)),12);
-        switch (funct3) {
-            case 0: // sb
-                mem_.storeByte(rf_.read(rs1) + u32(imm), u8(rf_.read(rs2) & 0xFF));
-                break;
-            case 1: // sh
-                mem_.storeHalf(rf_.read(rs1) + u32(imm), u16(rf_.read(rs2) & 0xFFFF));
-                break;
-            case 2: // sw
-                mem_.storeWord(rf_.read(rs1) + u32(imm), u32(rf_.read(rs2)));
-                break;
-            default:
-                std::cerr << "未实现的 STORE funct3=" << funct3 << "\n";
-                throw std::runtime_error("unimplemented instruction");
-        }
-        break;
-    }
-    case Op::LOAD:{
-        i32 imm = signExtend(bits(inst,31,20),12);
-        switch (funct3) {
-            case 0: // lb
-                rf_.write(rd, signExtend(mem_.loadByte(rf_.read(rs1) + u32(imm)),8));
-                break;
-            case 1: // lh
-                rf_.write(rd, signExtend(mem_.loadHalf(rf_.read(rs1) + u32(imm)),16));
-                break;
-            case 2: // lw
-                rf_.write(rd, mem_.loadWord(rf_.read(rs1) + u32(imm)));
-                break;
-            default:
-                std::cerr << "未实现的 LOAD funct3=" << funct3 << "\n";
-                throw std::runtime_error("unimplemented instruction");
-        }
-        break;
-    }
-    // TODO: AUIPC / JAL / JALR / BRANCH / LOAD / STORE
-    default:
-        std::cerr << "未实现的 opcode=0x" << std::hex << opcode << std::dec << "\n";
-        throw std::runtime_error("unimplemented instruction");
-    }
+    handlers[bits(inst, 6, 0)] (*this, inst);
 }
