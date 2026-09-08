@@ -59,6 +59,31 @@ namespace {
     u32 encodeI(const InsnDesc& desc,int rd,int rs1,i32 imm){
         return (u32(imm) & 0xFFF) << 20 | (u32(rs1) << 15) | (u32(desc.funct3 << 12)) | (u32(rd) << 7) | desc.opcode;
     }
+    u32 encodeB(const InsnDesc& desc,int rs1,int rs2,i32 imm){
+        u32 u =u32(imm);
+        return ((u>>12 & 0x1)<<31|(u>>5 & 0x3F)<<25 |u32(rs2) <<20|u32(rs1)<<15|u32(desc.funct3)<<12| ((u>>1 & 0xF)<<8)|((u>>11 & 0x1)<<7)|desc.opcode);
+    }
+    u32 encodeS(const InsnDesc& desc,int rs1,int rs2,i32 imm){
+        u32 u =u32(imm);
+        return ((u>>5 & 0x7F)<<25|u32(rs2)<<20|u32(rs1)<<15|u32(desc.funct3)<<12|((u & 0x1F)<<7)|desc.opcode);
+    }  
+    u32 encodeU(const InsnDesc& desc,int rd,i32 imm){
+        return (u32(imm) & 0xFFFFF)<<12|u32(rd)<<7|desc.opcode;
+    }
+    u32 encodeJ(const InsnDesc& desc,int rd,i32 imm){
+        u32 u =u32(imm);
+        return ((u>>20 & 0x1)<<31|((u>>1) & 0x3FF)<<21|((u>>11) & 0x1)<<20|((u>>12) & 0xFF)<<12|u32(rd)<<7|desc.opcode);
+    }
+    u32 encodeM(const InsnDesc& desc,int rd,int rs1,i32 imm){
+        return (u32(imm) & 0xFFF)<<20|u32(rs1)<<15|u32(desc.funct3)<<12|u32(rd)<<7|desc.opcode;
+    }
+    std::pair<i32,int> encodehelp(const std::string& s){
+        size_t pos = s.find('(');
+        if (pos == std::string::npos) throw std::runtime_error("invalid format");
+        i32 imm = parseImm(s.substr(0, pos));
+        int rs1 = regNum(s.substr(pos + 1, s.length() - pos - 2));
+        return {imm, rs1};
+    }
 }
 
 u32 Assembler::assembleLine(const std::string& line) {
@@ -81,6 +106,33 @@ u32 Assembler::assembleLine(const std::string& line) {
             int rd = regNum(a[0]), rs1 = regNum(a[1]);
             i32 imm = parseImm(a[2]);
             return encodeI(desc,rd,rs1,imm);
+        }
+        if(desc.format == 'B'){
+            int rs1 = regNum(a[0]), rs2 = regNum(a[1]);
+            i32 imm = parseImm(a[2]);
+            return encodeB(desc,rs1,rs2,imm);
+        }
+        if(desc.format == 'S'){
+            auto pair = encodehelp(a[1]);
+            int rs1 = pair.second, rs2 = regNum(a[0]);
+            i32 imm = pair.first;
+            return encodeS(desc,rs1,rs2,imm);
+        }
+        if(desc.format == 'U'){
+            int rd = regNum(a[0]);
+            i32 imm = parseImm(a[1]);
+            return encodeU(desc,rd,imm);
+        }
+        if(desc.format == 'J'){
+            int rd = regNum(a[0]);
+            i32 imm = parseImm(a[1]);
+            return encodeJ(desc,rd,imm);
+        }
+        if(desc.format == 'M'){
+            auto pair = encodehelp(a[1]);
+            int rs1 = pair.second, rd = regNum(a[0]);
+            i32 imm = pair.first;
+            return encodeM(desc,rd,rs1,imm);
         }
     }
 
