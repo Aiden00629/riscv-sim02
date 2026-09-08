@@ -201,7 +201,7 @@ QMessageBox::information(&window, "标题", "内容文字");
 2. 用 `windeployqt` 把 exe 依赖的 Qt DLL 拷到它旁边：
 
 ```bash
-cd /c/Users/cwrt/Desktop/riscv-sim/build/Desktop_Qt_6_11_2_MinGW_64_bit_Release
+cd ~/Desktop/riscv-sim/build/Desktop_Qt_6_11_2_MinGW_64_bit_Release
 "/e/qt/6.11.2/mingw_64/bin/windeployqt.exe" riscv-sim.exe
 ```
 
